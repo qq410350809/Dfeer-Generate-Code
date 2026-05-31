@@ -19,7 +19,6 @@
     <!-- Product and plugin compatibility requirements.
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html -->
     <depends>com.intellij.database</depends>
-    <depends>com.intellij.modules.lsp</depends>
     <depends>com.intellij.java</depends>
 
     <idea-version since-build="221" until-build="263.*"/>
