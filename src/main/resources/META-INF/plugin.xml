@@ -21,7 +21,7 @@
     <depends>com.intellij.database</depends>
     <depends>com.intellij.java</depends>
 
-    <idea-version since-build="221" until-build="263.*"/>
+    <idea-version since-build="231" until-build="263.*"/>
 
     <resource-bundle>messages.MyMessageBundle</resource-bundle>
 
