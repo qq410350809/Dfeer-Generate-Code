@@ -820,12 +820,17 @@ private fun TextFieldWithBrowseButton.addBrowseFolderListenerCompat(
     title: String
 ) {
     try {
-        val method = TextFieldWithBrowseButton::class.java.getMethod(
+        // 2023.2+ 新 API
+        val newMethod = TextFieldWithBrowseButton::class.java.getMethod(
             "addBrowseFolderListener", Project::class.java, FileChooserDescriptor::class.java
         )
-        method.invoke(this, project, descriptor)
+        newMethod.invoke(this, project, descriptor)
     } catch (e: NoSuchMethodException) {
-        @Suppress("DEPRECATION")
-        addBrowseFolderListener(title, "", project, descriptor)
+        // 旧版本回退
+        val oldMethod = TextFieldWithBrowseButton::class.java.getMethod(
+            "addBrowseFolderListener", String::class.java, String::class.java,
+            Project::class.java, FileChooserDescriptor::class.java
+        )
+        oldMethod.invoke(this, title, "", project, descriptor)
     }
 }
