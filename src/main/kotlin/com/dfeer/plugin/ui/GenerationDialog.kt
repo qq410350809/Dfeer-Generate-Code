@@ -348,8 +348,8 @@ class GenerationDialog(
 
     private fun setupListeners() {
         val descriptor = FileChooserDescriptor(true, true, false, false, false, false)
-        javaSourceField.addBrowseFolderListener("选择目录", "选择Java源目录", project, descriptor)
-        resourceField.addBrowseFolderListener("选择目录", "选择Resources目录", project, descriptor)
+        javaSourceField.addBrowseFolderListenerCompat(project, descriptor, "选择Java源目录")
+        resourceField.addBrowseFolderListenerCompat(project, descriptor, "选择Resources目录")
         tableModel.addTableModelListener { updateHeaderState() }
 
         moduleCombo.addActionListener {
@@ -606,7 +606,7 @@ class GenerationDialog(
 
             init {
                 val descriptor = FileChooserDescriptor(false, true, false, false, false, false)
-                field.addBrowseFolderListener("选择目录", "选择目标目录", project, descriptor)
+                field.addBrowseFolderListenerCompat(project, descriptor, "选择目标目录")
             }
 
             override fun getTableCellEditorComponent(
@@ -811,5 +811,21 @@ class GenerationDialog(
         val code = gen.generate(table, pkg)
         val r = writer.writeXmlFile(dir, fileName, code, overwrite = false)
         appendLog("${if (r.success) "✔" else if (r.error?.contains("跳过") == true) "•" else "❌"} $fileName.xml ${r.error ?: ""}")
+    }
+}
+
+private fun TextFieldWithBrowseButton.addBrowseFolderListenerCompat(
+    project: Project,
+    descriptor: FileChooserDescriptor,
+    title: String
+) {
+    try {
+        val method = TextFieldWithBrowseButton::class.java.getMethod(
+            "addBrowseFolderListener", Project::class.java, FileChooserDescriptor::class.java
+        )
+        method.invoke(this, project, descriptor)
+    } catch (e: NoSuchMethodException) {
+        @Suppress("DEPRECATION")
+        addBrowseFolderListener(title, "", project, descriptor)
     }
 }
