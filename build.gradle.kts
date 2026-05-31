@@ -5,6 +5,12 @@ plugins {
     id("org.jetbrains.intellij.platform")
 }
 
+intellijPlatform {
+    publishing {
+        token = project.findProperty("intellijPublishToken") as? String ?: ""
+    }
+}
+
 dependencies {
     testImplementation(libs.junit)
 
