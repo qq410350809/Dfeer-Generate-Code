@@ -348,8 +348,8 @@ class GenerationDialog(
 
     private fun setupListeners() {
         val descriptor = FileChooserDescriptor(true, true, false, false, false, false)
-        javaSourceField.addBrowseFolderListener(project, descriptor)
-        resourceField.addBrowseFolderListener(project, descriptor)
+        javaSourceField.addBrowseFolderListener("选择目录", "选择Java源目录", project, descriptor)
+        resourceField.addBrowseFolderListener("选择目录", "选择Resources目录", project, descriptor)
         tableModel.addTableModelListener { updateHeaderState() }
 
         moduleCombo.addActionListener {
@@ -606,7 +606,7 @@ class GenerationDialog(
 
             init {
                 val descriptor = FileChooserDescriptor(false, true, false, false, false, false)
-                field.addBrowseFolderListener(project, descriptor)
+                field.addBrowseFolderListener("选择目录", "选择目标目录", project, descriptor)
             }
 
             override fun getTableCellEditorComponent(
