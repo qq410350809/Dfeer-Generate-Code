@@ -20,7 +20,7 @@ plugins {
 }
 
 // 3. 然后才可以定义项目名称
-rootProject.name = "Generate-Code"
+rootProject.name = "Dfeer-Generate-Code"
 
 // 4. 最后是依赖解析管理
 @Suppress("UnstableApiUsage")
