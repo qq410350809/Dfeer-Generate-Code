@@ -4,9 +4,8 @@ import com.dfeer.plugin.model.TableInfo
 
 class MapperXmlGenerator {
 
-    fun generate(table: TableInfo, packageName: String): String {
+    fun generate(table: TableInfo, packageName: String, entityName: String = "${table.className}Do"): String {
         val className = table.className
-        val entityName = "${className}Do"
         val sb = StringBuilder()
 
         sb.appendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")

@@ -17,6 +17,12 @@ class GenerationSettings(private val project: Project) {
         private const val SERVICE = "${PREFIX}service"
         private const val MAPPER = "${PREFIX}mapper"
         private const val SWAGGER = "${PREFIX}swagger"
+        private const val ENTITY_SUFFIX = "${PREFIX}entitySuffix"
+        private const val DAO_SUFFIX = "${PREFIX}daoSuffix"
+        private const val SERVICE_SUFFIX = "${PREFIX}serviceSuffix"
+        private const val SERVICE_IMPL_SUFFIX = "${PREFIX}serviceImplSuffix"
+        private const val MAPPER_SUFFIX = "${PREFIX}mapperSuffix"
+        private const val TYPE_MAPPINGS = "${PREFIX}typeMappings"
     }
 
     private val props: PropertiesComponent = PropertiesComponent.getInstance(project)
@@ -60,4 +66,38 @@ class GenerationSettings(private val project: Project) {
     var useSwagger: Boolean
         get() = props.getBoolean(SWAGGER, false)
         set(v) = props.setValue(SWAGGER, v)
+
+    var entitySuffix: String
+        get() = props.getValue(ENTITY_SUFFIX, "Do")
+        set(v) = props.setValue(ENTITY_SUFFIX, v)
+
+    var daoSuffix: String
+        get() = props.getValue(DAO_SUFFIX, "Dao")
+        set(v) = props.setValue(DAO_SUFFIX, v)
+
+    var serviceSuffix: String
+        get() = props.getValue(SERVICE_SUFFIX, "Service")
+        set(v) = props.setValue(SERVICE_SUFFIX, v)
+
+    var serviceImplSuffix: String
+        get() = props.getValue(SERVICE_IMPL_SUFFIX, "ServiceImpl")
+        set(v) = props.setValue(SERVICE_IMPL_SUFFIX, v)
+
+    var mapperSuffix: String
+        get() = props.getValue(MAPPER_SUFFIX, "Mapper")
+        set(v) = props.setValue(MAPPER_SUFFIX, v)
+
+    var typeMappings: Map<String, String>
+        get() {
+            val raw = props.getValue(TYPE_MAPPINGS, "") ?: ""
+            if (raw.isBlank()) return emptyMap()
+            return raw.split(",").mapNotNull { entry ->
+                val parts = entry.split(":", limit = 2)
+                if (parts.size == 2) parts[0] to parts[1] else null
+            }.toMap()
+        }
+        set(v) {
+            val raw = v.entries.joinToString(",") { "${it.key}:${it.value}" }
+            props.setValue(TYPE_MAPPINGS, raw)
+        }
 }

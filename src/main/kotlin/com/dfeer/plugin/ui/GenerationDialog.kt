@@ -35,7 +35,7 @@ class GenerationDialog(
     private val cardLayout = CardLayout()
     private val rootPanel = JPanel(cardLayout)
 
-    // Step 1 - Setup
+    // ── Step 1 : 表选择 ──
     private val checked = BooleanArray(allTables.size) { true }
 
     private val tableModel = object : AbstractTableModel() {
@@ -59,9 +59,7 @@ class GenerationDialog(
         }
 
         override fun isCellEditable(row: Int, col: Int) = col == 0
-        fun refreshAll() {
-            fireTableDataChanged()
-        }
+        fun refreshAll() { fireTableDataChanged() }
     }
 
     private val tableList = JBTable(tableModel).apply {
@@ -106,10 +104,98 @@ class GenerationDialog(
     private val javaSourceField = TextFieldWithBrowseButton().apply { text = settings.javaSourceDir }
     private val resourceField = TextFieldWithBrowseButton().apply { text = settings.resourceDir }
 
-    // Step 2 - Generation / Log
+    // ── Step 2 : 文件配置 ──
+    private val fileTypeDefs = listOf(
+        FileTypeDef("Entity", "entity", settings.entitySuffix),
+        FileTypeDef("Dao", "dao", settings.daoSuffix),
+        FileTypeDef("Service", "service", settings.serviceSuffix),
+        FileTypeDef("ServiceImpl", "service/impl", settings.serviceImplSuffix),
+        FileTypeDef("Mapper XML", "mapper", settings.mapperSuffix)
+    )
+
+    private data class FileTypeDef(val label: String, val subPackage: String, var suffix: String)
+
+    private fun computeFileDirs(): List<String> {
+        val pkg = packageField.text.trim().replace('.', '/')
+        val javaDir = javaSourceField.text.trim()
+        val resourceDir = resourceField.text.trim()
+        return fileTypeDefs.map { def ->
+            if (def.label == "Mapper XML") "$resourceDir/${def.subPackage}"
+            else "$javaDir/$pkg/${def.subPackage}"
+        }
+    }
+
+    private var fileDirs: MutableList<String> = mutableListOf()
+    private var fileSuffixes: MutableList<String> = mutableListOf()
+
+    private val fileConfigModel = object : AbstractTableModel() {
+        override fun getRowCount() = fileTypeDefs.size
+        override fun getColumnCount() = 3
+        override fun getColumnName(col: Int) = when (col) {
+            0 -> "文件类型"
+            1 -> "目录"
+            else -> "后缀"
+        }
+        override fun getValueAt(row: Int, col: Int): Any = when (col) {
+            0 -> fileTypeDefs[row].label
+            1 -> fileDirs.getOrElse(row) { "" }
+            else -> fileSuffixes.getOrElse(row) { "" }
+        }
+        override fun isCellEditable(row: Int, col: Int) = col > 0
+        override fun setValueAt(value: Any?, row: Int, col: Int) {
+            if (col == 1) fileDirs[row] = value as String
+            else if (col == 2) {
+                fileSuffixes[row] = value as String
+                fileTypeDefs[row].suffix = value as String
+                saveSuffixSettings()
+            }
+        }
+    }
+
+    private val fileConfigTable = JBTable(fileConfigModel).apply {
+        rowHeight = 28
+        columnModel.getColumn(0).preferredWidth = 100
+        columnModel.getColumn(0).maxWidth = 120
+        columnModel.getColumn(1).preferredWidth = 350
+        columnModel.getColumn(2).preferredWidth = 80
+    }
+
+    // ── Step 3 : 类型映射 + 生成 ──
+    private val allJavaTypes = listOf(
+        "String", "Integer", "Long", "BigDecimal", "Boolean",
+        "LocalDate", "LocalDateTime", "Double", "Float", "Short", "Byte", "Byte[]", "Object"
+    )
+
+    private var typeMappingRows: MutableList<TypeMappingRow> = mutableListOf()
+
+    private data class TypeMappingRow(val dbType: String, var javaType: String)
+
+    private val typeMappingModel = object : AbstractTableModel() {
+        override fun getRowCount() = typeMappingRows.size
+        override fun getColumnCount() = 2
+        override fun getColumnName(col: Int) = when (col) {
+            0 -> "数据库类型"
+            else -> "Java 类型"
+        }
+        override fun getValueAt(row: Int, col: Int): Any = when (col) {
+            0 -> typeMappingRows[row].dbType
+            else -> typeMappingRows[row].javaType
+        }
+        override fun isCellEditable(row: Int, col: Int) = col == 1
+    }
+
+    private val typeMappingTable = JBTable(typeMappingModel).apply {
+        rowHeight = 28
+        columnModel.getColumn(0).preferredWidth = 150
+        columnModel.getColumn(1).preferredWidth = 150
+        columnModel.getColumn(1).cellEditor = DefaultCellEditor(JComboBox(allJavaTypes.toTypedArray()))
+    }
+
+    // ── Step 3 : 日志 ──
     private val summaryLabel = JLabel()
     private val logArea = JTextArea(15, 60).apply { isEditable = false }
 
+    // ── 导航 ──
     private var step = 1
     private var isGenerationInProgress = false
     private var isInitializing = true
@@ -122,12 +208,19 @@ class GenerationDialog(
 
     private fun buildButtonsForStep() {
         buttonPanel.removeAll()
-        if (step == 1) {
-            buttonPanel.add(cancelBtn)
-            buttonPanel.add(nextBtn)
-        } else {
-            buttonPanel.add(backBtn)
-            buttonPanel.add(generateButton)
+        when (step) {
+            1 -> {
+                buttonPanel.add(cancelBtn)
+                buttonPanel.add(nextBtn)
+            }
+            2 -> {
+                buttonPanel.add(backBtn)
+                buttonPanel.add(nextBtn)
+            }
+            3 -> {
+                buttonPanel.add(backBtn)
+                buttonPanel.add(generateButton)
+            }
         }
         buttonPanel.revalidate()
         buttonPanel.repaint()
@@ -142,11 +235,40 @@ class GenerationDialog(
         setupTableColumns()
         cancelBtn.addActionListener { doCancelAction() }
         nextBtn.addActionListener { goToNextStep() }
-        backBtn.addActionListener { showSetupStep() }
+        backBtn.addActionListener { goPrevStep() }
         generateButton.addActionListener { startGeneration() }
         buildButtonsForStep()
         autoDetectModule()
+        refreshFileDirs()
+        refreshTypeMappings()
         isInitializing = false
+    }
+
+    // ── 文件后缀编辑时实时持久化 ──
+    private fun saveSuffixSettings() {
+        settings.entitySuffix = fileTypeDefs[0].suffix
+        settings.daoSuffix = fileTypeDefs[1].suffix
+        settings.serviceSuffix = fileTypeDefs[2].suffix
+        settings.serviceImplSuffix = fileTypeDefs[3].suffix
+        settings.mapperSuffix = fileTypeDefs[4].suffix
+    }
+
+    private fun refreshFileDirs() {
+        fileDirs = computeFileDirs().toMutableList()
+        fileSuffixes = fileTypeDefs.map { it.suffix }.toMutableList()
+        fileConfigModel.fireTableDataChanged()
+    }
+
+    private fun refreshTypeMappings() {
+        val saved = settings.typeMappings
+        typeMappingRows = TypeMapper.getDefaultMappings().map { (dbType, javaType) ->
+            TypeMappingRow(dbType, saved[dbType] ?: javaType)
+        }.toMutableList()
+        typeMappingModel.fireTableDataChanged()
+    }
+
+    private fun saveTypeMappings() {
+        settings.typeMappings = typeMappingRows.associate { it.dbType to it.javaType }
     }
 
     private fun detectFallbackPackage(baseDir: String): String {
@@ -160,8 +282,7 @@ class GenerationDialog(
                     if (pkgLine != null) {
                         return cleanBasePackage(pkgLine.trimStart().removePrefix("package ").removeSuffix(";").trim())
                     }
-                } catch (_: Exception) {
-                }
+                } catch (_: Exception) { }
             }
         }
         val ktFiles = FilenameIndex.getAllFilesByExt(project, "kt", GlobalSearchScope.projectScope(project)).toList()
@@ -172,8 +293,7 @@ class GenerationDialog(
                 if (pkgLine != null) {
                     return cleanBasePackage(pkgLine.trimStart().removePrefix("package ").removeSuffix(";").trim())
                 }
-            } catch (_: Exception) {
-            }
+            } catch (_: Exception) { }
         }
         return project.name
     }
@@ -213,9 +333,7 @@ class GenerationDialog(
         val descriptor = FileChooserDescriptor(true, true, false, false, false, false)
         javaSourceField.addBrowseFolderListener(project, descriptor)
         resourceField.addBrowseFolderListener(project, descriptor)
-        tableModel.addTableModelListener {
-            updateHeaderState()
-        }
+        tableModel.addTableModelListener { updateHeaderState() }
 
         moduleCombo.addActionListener {
             val idx = moduleCombo.selectedIndex
@@ -230,19 +348,10 @@ class GenerationDialog(
             }
         }
 
-        // 变更即保存
         val docListener = object : javax.swing.event.DocumentListener {
-            override fun insertUpdate(e: javax.swing.event.DocumentEvent?) {
-                saveSettings()
-            }
-
-            override fun removeUpdate(e: javax.swing.event.DocumentEvent?) {
-                saveSettings()
-            }
-
-            override fun changedUpdate(e: javax.swing.event.DocumentEvent?) {
-                saveSettings()
-            }
+            override fun insertUpdate(e: javax.swing.event.DocumentEvent?) { saveSettings() }
+            override fun removeUpdate(e: javax.swing.event.DocumentEvent?) { saveSettings() }
+            override fun changedUpdate(e: javax.swing.event.DocumentEvent?) { saveSettings() }
         }
         packageField.document.addDocumentListener(docListener)
         genEntityCb.addActionListener { saveSettings() }
@@ -261,24 +370,15 @@ class GenerationDialog(
 
     private fun updateHeaderState() {
         when {
-            allSelected -> {
-                headerCb.isSelected = true; headerCb.isEnabled = true
-            }
-
-            anySelected -> {
-                headerCb.isSelected = true; headerCb.isEnabled = false
-            }
-
-            else -> {
-                headerCb.isSelected = false; headerCb.isEnabled = true
-            }
+            allSelected -> { headerCb.isSelected = true; headerCb.isEnabled = true }
+            anySelected -> { headerCb.isSelected = true; headerCb.isEnabled = false }
+            else -> { headerCb.isSelected = false; headerCb.isEnabled = true }
         }
         tableList.tableHeader.repaint()
     }
 
     private fun setupTableColumns() {
         val col0 = tableList.columnModel.getColumn(0)
-
         headerCb.horizontalAlignment = SwingConstants.CENTER
         tableList.tableHeader.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) {
@@ -291,7 +391,6 @@ class GenerationDialog(
                 }
             }
         })
-
         col0.headerRenderer = object : TableCellRenderer {
             override fun getTableCellRendererComponent(
                 table: JTable?, value: Any?, isSelected: Boolean, hasFocus: Boolean, row: Int, col: Int
@@ -300,13 +399,11 @@ class GenerationDialog(
                 return headerCb
             }
         }
-
         col0.cellRenderer = object : JCheckBox(), TableCellRenderer {
             init {
                 horizontalAlignment = SwingConstants.CENTER
                 border = BorderFactory.createEmptyBorder()
             }
-
             override fun getTableCellRendererComponent(
                 table: JTable?, value: Any?, isSelected: Boolean, hasFocus: Boolean, row: Int, col: Int
             ): Component {
@@ -314,7 +411,6 @@ class GenerationDialog(
                 return this
             }
         }
-
         tableList.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) {
                 val row = tableList.rowAtPoint(e.point)
@@ -326,22 +422,6 @@ class GenerationDialog(
                 }
             }
         })
-    }
-
-    override fun createCenterPanel(): JComponent {
-        rootPanel.add(createSetupPanel(), "setup")
-        rootPanel.add(createGenerationPanel(), "generation")
-        cardLayout.show(rootPanel, "setup")
-        return rootPanel
-    }
-
-    override fun doCancelAction() {
-        if (isGenerationInProgress) {
-            JOptionPane.showMessageDialog(rootPanel, "请等待生成完成")
-            return
-        }
-        saveSettings()
-        super.doCancelAction()
     }
 
     private fun saveSettings() {
@@ -357,21 +437,67 @@ class GenerationDialog(
         settings.genMapper = genMapperCb.isSelected
     }
 
-    private fun goToNextStep() {
-        val selected = allTables.filterIndexed { i, _ -> checked[i] }
-        if (selected.isEmpty()) {
-            JOptionPane.showMessageDialog(rootPanel, "请选择至少一个表")
-            return
-        }
-        if (javaSourceField.text.trim().isEmpty() || resourceField.text.trim().isEmpty()) {
-            JOptionPane.showMessageDialog(rootPanel, "请选择 Java 源目录和 Resources 目录")
+    override fun doCancelAction() {
+        if (isGenerationInProgress) {
+            JOptionPane.showMessageDialog(rootPanel, "请等待生成完成")
             return
         }
         saveSettings()
-        showGenerationStep()
+        super.doCancelAction()
     }
 
-    // ---- Setup Panel ----
+    private fun goToNextStep() {
+        when (step) {
+            1 -> {
+                val selected = allTables.filterIndexed { i, _ -> checked[i] }
+                if (selected.isEmpty()) {
+                    JOptionPane.showMessageDialog(rootPanel, "请选择至少一个表")
+                    return
+                }
+                if (javaSourceField.text.trim().isEmpty() || resourceField.text.trim().isEmpty()) {
+                    JOptionPane.showMessageDialog(rootPanel, "请选择 Java 源目录和 Resources 目录")
+                    return
+                }
+                saveSettings()
+                refreshFileDirs()
+                showStep(2)
+            }
+            2 -> {
+                saveSuffixSettings()
+                saveSettings()
+                refreshTypeMappings()
+                showStep(3)
+            }
+        }
+    }
+
+    private fun goPrevStep() {
+        when (step) {
+            2 -> showStep(1)
+            3 -> showStep(2)
+        }
+    }
+
+    // ── Panels ──
+
+    override fun createCenterPanel(): JComponent {
+        rootPanel.add(createSetupPanel(), "setup")
+        rootPanel.add(createFileConfigPanel(), "fileconfig")
+        rootPanel.add(createTypeMappingPanel(), "typemapping")
+        cardLayout.show(rootPanel, "setup")
+        return rootPanel
+    }
+
+    private fun showStep(s: Int) {
+        step = s
+        val cardName = when (s) {
+            1 -> "setup"
+            2 -> "fileconfig"
+            else -> "typemapping"
+        }
+        cardLayout.show(rootPanel, cardName)
+        buildButtonsForStep()
+    }
 
     private fun createSetupPanel(): JComponent {
         val panel = JPanel(GridBagLayout())
@@ -385,8 +511,7 @@ class GenerationDialog(
         c.gridx = 0; c.gridy = 1; c.gridwidth = 3; c.weighty = 1.0
         c.fill = GridBagConstraints.BOTH
         val col0 = tableList.columnModel.getColumn(0)
-        col0.preferredWidth = 40
-        col0.maxWidth = 40
+        col0.preferredWidth = 40; col0.maxWidth = 40
         tableList.columnModel.getColumn(1).preferredWidth = 200
         val scrollPane = JBScrollPane(tableList)
         scrollPane.preferredSize = java.awt.Dimension(550, 200)
@@ -423,52 +548,62 @@ class GenerationDialog(
         return panel
     }
 
-    // ---- Generation Panel ----
+    private fun createFileConfigPanel(): JComponent {
+        val panel = JPanel(BorderLayout())
+        val label = JLabel("配置各文件类型的目标目录和后缀名（目录修改不保存，后缀自动保存）:")
+        label.border = BorderFactory.createEmptyBorder(8, 8, 4, 8)
+        panel.add(label, BorderLayout.NORTH)
+        val scrollPane = JBScrollPane(fileConfigTable)
+        scrollPane.border = BorderFactory.createEmptyBorder(0, 8, 8, 8)
+        panel.add(scrollPane, BorderLayout.CENTER)
+        return panel
+    }
 
-    private fun createGenerationPanel(): JComponent {
+    private fun createTypeMappingPanel(): JComponent {
         val panel = JPanel(GridBagLayout())
         val c = GridBagConstraints()
-        c.fill = GridBagConstraints.BOTH
         c.insets = Insets(4, 8, 4, 8)
 
         c.gridx = 0; c.gridy = 0; c.weighty = 0.0; c.fill = GridBagConstraints.HORIZONTAL
+        panel.add(JLabel("数据库类型 → Java 类型映射（修改后自动保存）:"), c)
+
+        c.gridx = 0; c.gridy = 1; c.weighty = 0.5; c.fill = GridBagConstraints.BOTH
+        val typeScroll = JBScrollPane(typeMappingTable)
+        typeScroll.preferredSize = java.awt.Dimension(400, 200)
+        panel.add(typeScroll, c)
+
+        c.gridx = 0; c.gridy = 2; c.weighty = 0.0; c.fill = GridBagConstraints.HORIZONTAL
         panel.add(summaryLabel, c)
 
-        c.gridx = 0; c.gridy = 1; c.weighty = 1.0
+        c.gridx = 0; c.gridy = 3; c.weighty = 1.0; c.fill = GridBagConstraints.BOTH
         val logScroll = JBScrollPane(logArea)
-        logScroll.preferredSize = java.awt.Dimension(580, 300)
+        logScroll.preferredSize = java.awt.Dimension(580, 200)
         panel.add(logScroll, c)
 
         return panel
     }
 
-    private fun showSetupStep() {
-        step = 1
-        cardLayout.show(rootPanel, "setup")
-        buildButtonsForStep()
-    }
-
-    private fun showGenerationStep() {
-        step = 2
-        val selected = allTables.filterIndexed { i, _ -> checked[i] }
-        summaryLabel.text = "将生成 ${selected.size} 个表的代码: ${selected.joinToString(", ") { it.className }}"
-        logArea.text = ""
-        cardLayout.show(rootPanel, "generation")
-        buildButtonsForStep()
-    }
-
-    // ---- Generation ----
+    // ── Generation ──
 
     private fun startGeneration() {
+        // 保存类型映射
+        for (i in typeMappingRows.indices) {
+            val editor = typeMappingTable.columnModel.getColumn(1).cellEditor
+            if (editor != null && editor.isCellEditable(null)) editor.stopCellEditing()
+        }
+        saveTypeMappings()
+        saveSuffixSettings()
+
         val pkg = packageField.text.trim()
         val selected = allTables.filterIndexed { i, _ -> checked[i] }
-        val javaDirPath = javaSourceField.text.trim()
-        val resourceDirPath = resourceField.text.trim()
+        val javaDir = LocalFileSystem.getInstance().findFileByPath(javaSourceField.text.trim())
+        val resourceDir = LocalFileSystem.getInstance().findFileByPath(resourceField.text.trim())
+        val typeOverrides = settings.typeMappings
 
         appendLog("开始生成代码...")
         appendLog("包名: $pkg")
-        appendLog("Java目录: $javaDirPath")
-        appendLog("Resources目录: $resourceDirPath")
+        appendLog("Java目录: ${javaSourceField.text.trim()}")
+        appendLog("Resources目录: ${resourceField.text.trim()}")
         isGenerationInProgress = true
         generateButton.isEnabled = false
         generateButton.text = "生成中..."
@@ -476,58 +611,81 @@ class GenerationDialog(
         ApplicationManager.getApplication().runWriteAction {
             val writer = FileWriter(project)
 
-            val javaDir = LocalFileSystem.getInstance().findFileByPath(javaDirPath)
-            val resourceDir = LocalFileSystem.getInstance().findFileByPath(resourceDirPath)
             if (javaDir == null) {
                 SwingUtilities.invokeLater { finishGeneration() }
-                appendLog("❌ Java源目录不存在: $javaDirPath"); return@runWriteAction
+                appendLog("❌ Java源目录不存在: ${javaSourceField.text.trim()}"); return@runWriteAction
             }
             if (resourceDir == null) {
                 SwingUtilities.invokeLater { finishGeneration() }
-                appendLog("❌ Resources目录不存在: $resourceDirPath"); return@runWriteAction
+                appendLog("❌ Resources目录不存在: ${resourceField.text.trim()}"); return@runWriteAction
             }
 
             try {
                 selected.forEach { table ->
-                    val entityDir = writer.findOrCreatePackageDir(javaDir, pkg, "entity")
-                    val daoDir = writer.findOrCreatePackageDir(javaDir, pkg, "dao")
-                    val serviceDir = writer.findOrCreatePackageDir(javaDir, pkg, "service")
-                    val mapperDir = writer.findOrCreateDir(resourceDir, "mapper")
-                    val entityName = "${table.className}Do"
+                    val entitySuffix = fileSuffixes[0]
+                    val entityName = "${table.className}$entitySuffix"
+                    for (i in fileTypeDefs.indices) {
+                        val def = fileTypeDefs[i]
+                        val fileDirStr = fileDirs[i]
+                        val suffix = fileSuffixes[i]
 
-                    if (genEntityCb.isSelected && entityDir != null) {
-                        val gen = EntityGenerator(useLombokCb.isSelected, useTableLogicCb.isSelected, useSwaggerCb.isSelected)
-                        val code = gen.generate(table, pkg, entityName)
-                        val r = writer.writeJavaFile(entityDir, entityName, code, overwrite = true)
-                        appendLog("${if (r.success) "✔" else "❌"} $entityName.java ${r.error ?: ""}")
-                    }
-                    if (genDaoCb.isSelected && daoDir != null) {
-                        val gen = DaoGenerator()
-                        val code = gen.generate(table, pkg)
-                        val r = writer.writeJavaFile(daoDir, "${table.className}Dao", code, overwrite = false)
-                        appendLog("${if (r.success) "✔" else if (r.error?.contains("跳过") == true) "•" else "❌"} ${table.className}Dao.java ${r.error ?: ""}")
-                    }
-                    if (genServiceCb.isSelected && serviceDir != null) {
-                        val gen = ServiceGenerator()
-                        val code = gen.generate(table, pkg)
-                        val r =
-                            writer.writeJavaFile(serviceDir, "${table.className}Service", code, overwrite = false)
-                        appendLog("${if (r.success) "✔" else if (r.error?.contains("跳过") == true) "•" else "❌"} ${table.className}Service.java ${r.error ?: ""}")
-                        val implDir = writer.findOrCreatePackageDir(javaDir, pkg, "service.impl")
-                        if (implDir != null) {
-                            val genImpl = ServiceImplGenerator()
-                            val codeImpl = genImpl.generate(table, pkg)
-                            val r2 = writer.writeJavaFile(
-                                implDir, "${table.className}ServiceImpl", codeImpl, overwrite = false
-                            )
-                            appendLog("${if (r2.success) "✔" else if (r2.error?.contains("跳过") == true) "•" else "❌"} ${table.className}ServiceImpl.java ${r2.error ?: ""}")
+                        when (def.label) {
+                            "Entity" -> {
+                                if (!genEntityCb.isSelected) continue
+                                val dir = writer.findOrCreateDirByPath(fileDirStr)
+                                if (dir != null) {
+                                    val gen = EntityGenerator(useLombokCb.isSelected, useTableLogicCb.isSelected, useSwaggerCb.isSelected)
+                                    val fileName = "${table.className}$suffix"
+                                    val code = gen.generate(table, pkg, entityName)
+                                    val r = writer.writeJavaFile(dir, fileName, code, overwrite = true)
+                                    appendLog("${if (r.success) "✔" else "❌"} $fileName.java ${r.error ?: ""}")
+                                }
+                            }
+                            "Dao" -> {
+                                if (!genDaoCb.isSelected) continue
+                                val dir = writer.findOrCreateDirByPath(fileDirStr)
+                                if (dir != null) {
+                                    val gen = DaoGenerator()
+                                    val fileName = "${table.className}$suffix"
+                                    val code = gen.generate(table, pkg, entityName)
+                                    val r = writer.writeJavaFile(dir, fileName, code, overwrite = false)
+                                    appendLog("${if (r.success) "✔" else if (r.error?.contains("跳过") == true) "•" else "❌"} $fileName.java ${r.error ?: ""}")
+                                }
+                            }
+                            "Service" -> {
+                                if (!genServiceCb.isSelected) continue
+                                val dir = writer.findOrCreateDirByPath(fileDirStr)
+                                if (dir != null) {
+                                    val gen = ServiceGenerator()
+                                    val fileName = "${table.className}$suffix"
+                                    val code = gen.generate(table, pkg, entityName)
+                                    val r = writer.writeJavaFile(dir, fileName, code, overwrite = false)
+                                    appendLog("${if (r.success) "✔" else if (r.error?.contains("跳过") == true) "•" else "❌"} $fileName.java ${r.error ?: ""}")
+                                }
+                            }
+                            "ServiceImpl" -> {
+                                if (!genServiceCb.isSelected) continue
+                                val dir = writer.findOrCreateDirByPath(fileDirStr)
+                                if (dir != null) {
+                                    val gen = ServiceImplGenerator()
+                                    val fileName = "${table.className}$suffix"
+                                    val code = gen.generate(table, pkg, entityName)
+                                    val r = writer.writeJavaFile(dir, fileName, code, overwrite = false)
+                                    appendLog("${if (r.success) "✔" else if (r.error?.contains("跳过") == true) "•" else "❌"} $fileName.java ${r.error ?: ""}")
+                                }
+                            }
+                            "Mapper XML" -> {
+                                if (!genMapperCb.isSelected) continue
+                                val dir = writer.findOrCreateDirByPath(fileDirStr)
+                                if (dir != null) {
+                                    val gen = MapperXmlGenerator()
+                                    val fileName = "${table.className}$suffix"
+                                    val code = gen.generate(table, pkg, entityName)
+                                    val r = writer.writeXmlFile(dir, fileName, code, overwrite = false)
+                                    appendLog("${if (r.success) "✔" else if (r.error?.contains("跳过") == true) "•" else "❌"} $fileName.xml ${r.error ?: ""}")
+                                }
+                            }
                         }
-                    }
-                    if (genMapperCb.isSelected && mapperDir != null) {
-                        val gen = MapperXmlGenerator()
-                        val code = gen.generate(table, pkg)
-                        val r = writer.writeXmlFile(mapperDir, "${table.className}Mapper", code, overwrite = false)
-                        appendLog("${if (r.success) "✔" else if (r.error?.contains("跳过") == true) "•" else "❌"} ${table.className}Mapper.xml ${r.error ?: ""}")
                     }
                 }
                 appendLog("")

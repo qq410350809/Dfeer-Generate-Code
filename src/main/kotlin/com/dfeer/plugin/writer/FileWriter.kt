@@ -35,6 +35,15 @@ class FileWriter(private val project: Project) {
         }
     }
 
+    fun findOrCreateDirByPath(absolutePath: String): VirtualFile? {
+        val fs = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
+        var dir = fs.findFileByPath(absolutePath)
+        if (dir != null) return dir
+        val parent = findOrCreateDirByPath(absolutePath.substringBeforeLast("/"))
+            ?: return null
+        return parent.createChildDirectory(this, absolutePath.substringAfterLast("/"))
+    }
+
     fun findOrCreatePackageDir(baseDir: VirtualFile, packageName: String, subPackage: String): VirtualFile? {
         val fullPath = "$packageName/$subPackage".replace('.', '/')
         var current: VirtualFile? = baseDir

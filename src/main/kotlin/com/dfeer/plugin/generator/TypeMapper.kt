@@ -2,9 +2,36 @@ package com.dfeer.plugin.generator
 
 object TypeMapper {
 
-    fun toJavaType(dbType: String, columnName: String = ""): String {
+    private val knownTypePrefixes = listOf(
+        "TINYINT", "SMALLINT", "MEDIUMINT", "INTEGER", "INT", "BIGINT",
+        "VARCHAR", "CHAR", "TEXT", "LONGTEXT", "MEDIUMTEXT", "TINYTEXT",
+        "DECIMAL", "NUMERIC", "FLOAT", "DOUBLE",
+        "DATETIME", "TIMESTAMP", "DATE", "BIT"
+    )
+
+    fun toJavaType(dbType: String, columnName: String = "", overrides: Map<String, String> = emptyMap()): String {
         val upper = dbType.uppercase().trim()
-        val baseType = when {
+        if (overrides.isNotEmpty()) {
+            val match = findOverrideMatch(upper, overrides)
+            if (match != null) return match
+        }
+        return defaultToJavaType(upper)
+    }
+
+    private fun findOverrideMatch(upper: String, overrides: Map<String, String>): String? {
+        val exactMatch = overrides[upper]
+        if (exactMatch != null) return exactMatch
+        val sorted = overrides.keys.sortedByDescending { it.length }
+        for (prefix in sorted) {
+            if (upper.startsWith(prefix) || prefix.startsWith(upper)) {
+                return overrides[prefix]
+            }
+        }
+        return null
+    }
+
+    private fun defaultToJavaType(upper: String): String {
+        return when {
             upper.startsWith("VARCHAR") || upper.startsWith("CHAR") ||
             upper.startsWith("TEXT") || upper.startsWith("LONGTEXT") ||
             upper.startsWith("MEDIUMTEXT") || upper.startsWith("TINYTEXT") -> "String"
@@ -20,20 +47,22 @@ object TypeMapper {
             upper.startsWith("DATETIME") || upper.startsWith("TIMESTAMP") -> "LocalDateTime"
             else -> "String"
         }
-        return baseType
     }
 
-    fun toImportTypes(dbType: String): String? {
-        val upper = dbType.uppercase().trim()
-        return when {
-            upper.startsWith("DECIMAL") || upper.startsWith("NUMERIC") ||
-            upper.startsWith("FLOAT") || upper.startsWith("DOUBLE") ->
-                "java.math.BigDecimal"
-            upper == "DATE" -> "java.time.LocalDate"
-            upper.startsWith("DATETIME") || upper.startsWith("TIMESTAMP") ->
-                "java.time.LocalDateTime"
-            else -> null
+    fun getDefaultMappings(): List<Pair<String, String>> {
+        val seen = mutableSetOf<String>()
+        return knownTypePrefixes.mapNotNull { prefix ->
+            val jt = defaultToJavaType(prefix)
+            if (seen.add(jt)) prefix to jt else null
         }
+    }
+
+    fun toImportTypes(dbType: String, overrides: Map<String, String> = emptyMap()): String? {
+        val javaType = toJavaType(dbType, overrides = overrides)
+        return if (javaType == "BigDecimal") "java.math.BigDecimal"
+        else if (javaType == "LocalDate") "java.time.LocalDate"
+        else if (javaType == "LocalDateTime") "java.time.LocalDateTime"
+        else null
     }
 
     fun toJdbcType(dbType: String): String {
