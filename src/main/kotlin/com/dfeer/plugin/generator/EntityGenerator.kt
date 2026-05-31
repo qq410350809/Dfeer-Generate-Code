@@ -65,7 +65,7 @@ class EntityGenerator(
     }
 
     private fun generateField(sb: StringBuilder, col: ColumnInfo) {
-        val javaType = TypeMapper.toJavaType(col.type, col.name)
+        val javaType = TypeMapper.toJavaType(col.type)
         val fieldName = col.camelName
         if (col.comment.isNotBlank()) {
             sb.appendLine("    /**")
@@ -93,12 +93,12 @@ class EntityGenerator(
     }
 
     private fun generateGetterSetter(sb: StringBuilder, col: ColumnInfo) {
-        val javaType = TypeMapper.toJavaType(col.type, col.name)
+        val javaType = TypeMapper.toJavaType(col.type)
         val fieldName = col.camelName
         val capName = fieldName.replaceFirstChar { it.uppercase() }
 
         if (javaType == "Boolean" || javaType == "boolean") {
-            sb.appendLine("    public ${javaType} is${capName}() {")
+            sb.appendLine("    public $javaType is$capName() {")
             sb.appendLine("        return $fieldName;")
             sb.appendLine("    }")
         } else {

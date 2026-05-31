@@ -3,7 +3,7 @@ package com.dfeer.plugin.settings
 import com.intellij.ide.util.PropertiesComponent
 import com.intellij.openapi.project.Project
 
-class GenerationSettings(private val project: Project) {
+class GenerationSettings(project: Project) {
 
     companion object {
         private const val PREFIX = "GenerateCode."
@@ -89,7 +89,7 @@ class GenerationSettings(private val project: Project) {
 
     var typeMappings: Map<String, String>
         get() {
-            val raw = props.getValue(TYPE_MAPPINGS, "") ?: ""
+            val raw = props.getValue(TYPE_MAPPINGS, "")
             if (raw.isBlank()) return emptyMap()
             return raw.split(",").mapNotNull { entry ->
                 val parts = entry.split(":", limit = 2)

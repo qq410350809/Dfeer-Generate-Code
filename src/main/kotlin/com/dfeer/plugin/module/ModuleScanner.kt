@@ -3,6 +3,7 @@ package com.dfeer.plugin.module
 import com.intellij.openapi.module.Module
 import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.roots.ModuleRootManager
 import java.nio.file.Paths
 
 data class ModuleInfo(
@@ -21,8 +22,8 @@ class ModuleScanner(private val project: Project) {
     }
 
     private fun scanModule(module: Module): ModuleInfo? {
-        val modulePath = module.moduleFilePath
-        val moduleDir = modulePath.substring(0, modulePath.lastIndexOf("/"))
+        val moduleDir = ModuleRootManager.getInstance(module).contentRoots
+            .firstOrNull()?.path ?: return null
 
         val javaSrc = Paths.get(moduleDir, "src/main/java")
         val kotlinSrc = Paths.get(moduleDir, "src/main/kotlin")

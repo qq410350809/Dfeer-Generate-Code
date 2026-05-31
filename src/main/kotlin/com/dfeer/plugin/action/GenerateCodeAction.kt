@@ -33,7 +33,7 @@ class GenerateCodeAction : AnAction() {
         val project = e.project ?: return
 
         try {
-            val reader = DatabaseReader(project)
+            val reader = DatabaseReader()
             val tables = mutableListOf<DbTable>()
 
             // 1. 选中的 DbTable（支持复选）

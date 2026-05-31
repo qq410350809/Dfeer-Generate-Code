@@ -8,7 +8,6 @@ import com.dfeer.plugin.module.ModuleScanner
 import com.dfeer.plugin.settings.GenerationSettings
 import com.dfeer.plugin.writer.FileWriter
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.fileChooser.FileChooser
 import com.intellij.openapi.fileChooser.FileChooserDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
@@ -20,6 +19,7 @@ import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextField
 import com.intellij.ui.table.JBTable
+import com.intellij.util.ui.JBUI
 import java.awt.*
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
@@ -61,7 +61,9 @@ class GenerationDialog(
         }
 
         override fun isCellEditable(row: Int, col: Int) = col == 0
-        fun refreshAll() { fireTableDataChanged() }
+        fun refreshAll() {
+            fireTableDataChanged()
+        }
     }
 
     private val tableList = JBTable(tableModel).apply {
@@ -92,7 +94,7 @@ class GenerationDialog(
                     name = project.name,
                     sourceDir = "$baseDir/src/main/java",
                     resourceDir = "$baseDir/src/main/resources",
-                    basePackage = detectFallbackPackage(baseDir)
+                    basePackage = detectFallbackPackage()
                 )
             )
         }
@@ -138,17 +140,19 @@ class GenerationDialog(
             1 -> "目录"
             else -> "后缀"
         }
+
         override fun getValueAt(row: Int, col: Int): Any = when (col) {
             0 -> fileTypeDefs[row].label
             1 -> fileDirs.getOrElse(row) { "" }
             else -> fileSuffixes.getOrElse(row) { "" }
         }
+
         override fun isCellEditable(row: Int, col: Int) = col > 0
         override fun setValueAt(value: Any?, row: Int, col: Int) {
             if (col == 1) fileDirs[row] = value as String
             else if (col == 2) {
                 fileSuffixes[row] = value as String
-                fileTypeDefs[row].suffix = value as String
+                fileTypeDefs[row].suffix = value
                 saveSuffixSettings()
             }
         }
@@ -164,8 +168,19 @@ class GenerationDialog(
 
     // ── Step 3 : 类型映射 + 生成 ──
     private val allJavaTypes = listOf(
-        "String", "Integer", "Long", "BigDecimal", "Boolean",
-        "LocalDate", "LocalDateTime", "Double", "Float", "Short", "Byte", "Byte[]", "Object"
+        "String",
+        "Integer",
+        "Long",
+        "BigDecimal",
+        "Boolean",
+        "LocalDate",
+        "LocalDateTime",
+        "Double",
+        "Float",
+        "Short",
+        "Byte",
+        "Byte[]",
+        "Object"
     )
 
     private var typeMappingRows: MutableList<TypeMappingRow> = mutableListOf()
@@ -179,10 +194,12 @@ class GenerationDialog(
             0 -> "数据库类型"
             else -> "Java 类型"
         }
+
         override fun getValueAt(row: Int, col: Int): Any = when (col) {
             0 -> typeMappingRows[row].dbType
             else -> typeMappingRows[row].javaType
         }
+
         override fun isCellEditable(row: Int, col: Int) = col == 1
     }
 
@@ -215,10 +232,12 @@ class GenerationDialog(
                 buttonPanel.add(cancelBtn)
                 buttonPanel.add(nextBtn)
             }
+
             2, 3 -> {
                 buttonPanel.add(backBtn)
                 buttonPanel.add(nextBtn)
             }
+
             4 -> {
                 buttonPanel.add(backBtn)
                 buttonPanel.add(generateButton)
@@ -273,31 +292,27 @@ class GenerationDialog(
         settings.typeMappings = typeMappingRows.associate { it.dbType to it.javaType }
     }
 
-    private fun detectFallbackPackage(baseDir: String): String {
-        val srcDir = LocalFileSystem.getInstance().findFileByPath("$baseDir/src/main/java") ?: return project.name
-        val files = FilenameIndex.getAllFilesByExt(project, "java", GlobalSearchScope.projectScope(project)).toList()
-        if (files.isNotEmpty()) {
-            for (file in files) {
-                try {
-                    val text = String(file.contentsToByteArray(), Charsets.UTF_8)
-                    val pkgLine = text.lineSequence().firstOrNull { it.trimStart().startsWith("package ") }
-                    if (pkgLine != null) {
-                        return cleanBasePackage(pkgLine.trimStart().removePrefix("package ").removeSuffix(";").trim())
-                    }
-                } catch (_: Exception) { }
-            }
+    private fun detectFallbackPackage(): String {
+        for (ext in listOf("java", "kt")) {
+            val pkg = findPackageInSourceFiles(ext)
+            if (pkg != null) return pkg
         }
-        val ktFiles = FilenameIndex.getAllFilesByExt(project, "kt", GlobalSearchScope.projectScope(project)).toList()
-        for (file in ktFiles) {
+        return project.name
+    }
+
+    private fun findPackageInSourceFiles(ext: String): String? {
+        val files = FilenameIndex.getAllFilesByExt(project, ext, GlobalSearchScope.projectScope(project)).toList()
+        for (file in files) {
             try {
                 val text = String(file.contentsToByteArray(), Charsets.UTF_8)
                 val pkgLine = text.lineSequence().firstOrNull { it.trimStart().startsWith("package ") }
                 if (pkgLine != null) {
                     return cleanBasePackage(pkgLine.trimStart().removePrefix("package ").removeSuffix(";").trim())
                 }
-            } catch (_: Exception) { }
+            } catch (_: Exception) {
+            }
         }
-        return project.name
+        return null
     }
 
     private fun autoDetectModule() {
@@ -351,9 +366,17 @@ class GenerationDialog(
         }
 
         val docListener = object : javax.swing.event.DocumentListener {
-            override fun insertUpdate(e: javax.swing.event.DocumentEvent?) { saveSettings() }
-            override fun removeUpdate(e: javax.swing.event.DocumentEvent?) { saveSettings() }
-            override fun changedUpdate(e: javax.swing.event.DocumentEvent?) { saveSettings() }
+            override fun insertUpdate(e: javax.swing.event.DocumentEvent?) {
+                saveSettings()
+            }
+
+            override fun removeUpdate(e: javax.swing.event.DocumentEvent?) {
+                saveSettings()
+            }
+
+            override fun changedUpdate(e: javax.swing.event.DocumentEvent?) {
+                saveSettings()
+            }
         }
         packageField.document.addDocumentListener(docListener)
         genEntityCb.addActionListener { saveSettings() }
@@ -372,9 +395,17 @@ class GenerationDialog(
 
     private fun updateHeaderState() {
         when {
-            allSelected -> { headerCb.isSelected = true; headerCb.isEnabled = true }
-            anySelected -> { headerCb.isSelected = true; headerCb.isEnabled = false }
-            else -> { headerCb.isSelected = false; headerCb.isEnabled = true }
+            allSelected -> {
+                headerCb.isSelected = true; headerCb.isEnabled = true
+            }
+
+            anySelected -> {
+                headerCb.isSelected = true; headerCb.isEnabled = false
+            }
+
+            else -> {
+                headerCb.isSelected = false; headerCb.isEnabled = true
+            }
         }
         tableList.tableHeader.repaint()
     }
@@ -393,19 +424,16 @@ class GenerationDialog(
                 }
             }
         })
-        col0.headerRenderer = object : TableCellRenderer {
-            override fun getTableCellRendererComponent(
-                table: JTable?, value: Any?, isSelected: Boolean, hasFocus: Boolean, row: Int, col: Int
-            ): Component {
-                updateHeaderState()
-                return headerCb
-            }
+        col0.headerRenderer = TableCellRenderer { _, _, _, _, _, _ ->
+            updateHeaderState()
+            headerCb
         }
         col0.cellRenderer = object : JCheckBox(), TableCellRenderer {
             init {
-                horizontalAlignment = SwingConstants.CENTER
+                horizontalAlignment = CENTER
                 border = BorderFactory.createEmptyBorder()
             }
+
             override fun getTableCellRendererComponent(
                 table: JTable?, value: Any?, isSelected: Boolean, hasFocus: Boolean, row: Int, col: Int
             ): Component {
@@ -464,12 +492,14 @@ class GenerationDialog(
                 refreshFileDirs()
                 showStep(2)
             }
+
             2 -> {
                 saveSuffixSettings()
                 saveSettings()
                 refreshTypeMappings()
                 showStep(3)
             }
+
             3 -> {
                 saveTypeMappings()
                 showGenerationStep()
@@ -519,7 +549,7 @@ class GenerationDialog(
         val panel = JPanel(GridBagLayout())
         val c = GridBagConstraints()
         c.fill = GridBagConstraints.HORIZONTAL
-        c.insets = Insets(4, 8, 4, 8)
+        c.insets = JBUI.insets(4, 8)
 
         c.gridx = 0; c.gridy = 0; c.gridwidth = 3; c.weighty = 0.0
         panel.add(JLabel("选择要生成的表:"), c)
@@ -530,7 +560,7 @@ class GenerationDialog(
         col0.preferredWidth = 40; col0.maxWidth = 40
         tableList.columnModel.getColumn(1).preferredWidth = 200
         val scrollPane = JBScrollPane(tableList)
-        scrollPane.preferredSize = java.awt.Dimension(550, 200)
+        scrollPane.preferredSize = Dimension(550, 200)
         panel.add(scrollPane, c)
 
         c.fill = GridBagConstraints.HORIZONTAL; c.weighty = 0.0
@@ -609,14 +639,14 @@ class GenerationDialog(
     private fun createGenerationPanel(): JComponent {
         val panel = JPanel(GridBagLayout())
         val c = GridBagConstraints()
-        c.insets = Insets(4, 8, 4, 8)
+        c.insets = JBUI.insets(4, 8)
 
         c.gridx = 0; c.gridy = 0; c.weighty = 0.0; c.fill = GridBagConstraints.HORIZONTAL
         panel.add(summaryLabel, c)
 
         c.gridx = 0; c.gridy = 1; c.weighty = 1.0; c.fill = GridBagConstraints.BOTH
         val logScroll = JBScrollPane(logArea)
-        logScroll.preferredSize = java.awt.Dimension(580, 300)
+        logScroll.preferredSize = Dimension(580, 300)
         panel.add(logScroll, c)
 
         return panel
@@ -626,7 +656,7 @@ class GenerationDialog(
 
     private fun startGeneration() {
         // 保存类型映射
-        for (i in typeMappingRows.indices) {
+        typeMappingRows.indices.forEach { _ ->
             val editor = typeMappingTable.columnModel.getColumn(1).cellEditor
             if (editor != null && editor.isCellEditable(null)) editor.stopCellEditing()
         }
@@ -637,7 +667,6 @@ class GenerationDialog(
         val selected = allTables.filterIndexed { i, _ -> checked[i] }
         val javaDir = LocalFileSystem.getInstance().findFileByPath(javaSourceField.text.trim())
         val resourceDir = LocalFileSystem.getInstance().findFileByPath(resourceField.text.trim())
-        val typeOverrides = settings.typeMappings
 
         appendLog("开始生成代码...")
         appendLog("包名: $pkg")
@@ -648,7 +677,7 @@ class GenerationDialog(
         generateButton.text = "生成中..."
 
         ApplicationManager.getApplication().runWriteAction {
-            val writer = FileWriter(project)
+            val writer = FileWriter()
 
             if (javaDir == null) {
                 SwingUtilities.invokeLater { finishGeneration() }
@@ -671,58 +700,53 @@ class GenerationDialog(
                         when (def.label) {
                             "Entity" -> {
                                 if (!genEntityCb.isSelected) continue
-                                val dir = writer.findOrCreateDirByPath(fileDirStr)
-                                if (dir != null) {
-                                    val gen = EntityGenerator(useLombokCb.isSelected, useTableLogicCb.isSelected, useSwaggerCb.isSelected)
-                                    val fileName = "${table.className}$suffix"
-                                    val code = gen.generate(table, pkg, entityName)
-                                    val r = writer.writeJavaFile(dir, fileName, code, overwrite = true)
-                                    appendLog("${if (r.success) "✔" else "❌"} $fileName.java ${r.error ?: ""}")
-                                }
+                                writeGeneratedFile(
+                                    writer,
+                                    EntityGenerator(
+                                        useLombokCb.isSelected, useTableLogicCb.isSelected, useSwaggerCb.isSelected
+                                    ),
+                                    table,
+                                    pkg,
+                                    entityName,
+                                    fileDirStr,
+                                    suffix,
+                                    ext = "java",
+                                    overwrite = true,
+                                    skipCheck = false
+                                )
                             }
+
                             "Dao" -> {
                                 if (!genDaoCb.isSelected) continue
-                                val dir = writer.findOrCreateDirByPath(fileDirStr)
-                                if (dir != null) {
-                                    val gen = DaoGenerator()
-                                    val fileName = "${table.className}$suffix"
-                                    val code = gen.generate(table, pkg, entityName)
-                                    val r = writer.writeJavaFile(dir, fileName, code, overwrite = false)
-                                    appendLog("${if (r.success) "✔" else if (r.error?.contains("跳过") == true) "•" else "❌"} $fileName.java ${r.error ?: ""}")
-                                }
+                                writeGeneratedFile(
+                                    writer, DaoGenerator(), table, pkg, entityName, fileDirStr, suffix, ext = "java"
+                                )
                             }
+
                             "Service" -> {
                                 if (!genServiceCb.isSelected) continue
-                                val dir = writer.findOrCreateDirByPath(fileDirStr)
-                                if (dir != null) {
-                                    val gen = ServiceGenerator()
-                                    val fileName = "${table.className}$suffix"
-                                    val code = gen.generate(table, pkg, entityName)
-                                    val r = writer.writeJavaFile(dir, fileName, code, overwrite = false)
-                                    appendLog("${if (r.success) "✔" else if (r.error?.contains("跳过") == true) "•" else "❌"} $fileName.java ${r.error ?: ""}")
-                                }
+                                writeGeneratedFile(
+                                    writer, ServiceGenerator(), table, pkg, entityName, fileDirStr, suffix, ext = "java"
+                                )
                             }
+
                             "ServiceImpl" -> {
                                 if (!genServiceCb.isSelected) continue
-                                val dir = writer.findOrCreateDirByPath(fileDirStr)
-                                if (dir != null) {
-                                    val gen = ServiceImplGenerator()
-                                    val fileName = "${table.className}$suffix"
-                                    val code = gen.generate(table, pkg, entityName)
-                                    val r = writer.writeJavaFile(dir, fileName, code, overwrite = false)
-                                    appendLog("${if (r.success) "✔" else if (r.error?.contains("跳过") == true) "•" else "❌"} $fileName.java ${r.error ?: ""}")
-                                }
+                                writeGeneratedFile(
+                                    writer,
+                                    ServiceImplGenerator(),
+                                    table,
+                                    pkg,
+                                    entityName,
+                                    fileDirStr,
+                                    suffix,
+                                    ext = "java"
+                                )
                             }
+
                             "Mapper XML" -> {
                                 if (!genMapperCb.isSelected) continue
-                                val dir = writer.findOrCreateDirByPath(fileDirStr)
-                                if (dir != null) {
-                                    val gen = MapperXmlGenerator()
-                                    val fileName = "${table.className}$suffix"
-                                    val code = gen.generate(table, pkg, entityName)
-                                    val r = writer.writeXmlFile(dir, fileName, code, overwrite = false)
-                                    appendLog("${if (r.success) "✔" else if (r.error?.contains("跳过") == true) "•" else "❌"} $fileName.xml ${r.error ?: ""}")
-                                }
+                                writeXmlGeneratedFile(writer, MapperXmlGenerator(), table, pkg, fileDirStr, suffix)
                             }
                         }
                     }
@@ -747,5 +771,45 @@ class GenerationDialog(
             logArea.append("$msg\n")
             logArea.caretPosition = logArea.text.length
         }
+    }
+
+    private fun writeGeneratedFile(
+        writer: FileWriter,
+        gen: Any,
+        table: TableInfo,
+        pkg: String,
+        entityName: String,
+        fileDirStr: String,
+        suffix: String,
+        ext: String,
+        overwrite: Boolean = false,
+        skipCheck: Boolean = true
+    ) {
+        val dir = writer.findOrCreateDirByPath(fileDirStr) ?: return
+        val fileName = "${table.className}$suffix"
+        val code = when (gen) {
+            is EntityGenerator -> gen.generate(table, pkg, entityName)
+            is DaoGenerator -> gen.generate(table, pkg, entityName)
+            is ServiceGenerator -> gen.generate(table, pkg, entityName)
+            is ServiceImplGenerator -> gen.generate(table, pkg, entityName)
+            else -> return
+        }
+        val r = writer.writeJavaFile(dir, fileName, code, overwrite)
+        val status = when {
+            r.success -> "✔"
+            skipCheck && r.error?.contains("跳过") == true -> "•"
+            else -> "❌"
+        }
+        appendLog("$status $fileName.$ext ${r.error ?: ""}")
+    }
+
+    private fun writeXmlGeneratedFile(
+        writer: FileWriter, gen: MapperXmlGenerator, table: TableInfo, pkg: String, fileDirStr: String, suffix: String
+    ) {
+        val dir = writer.findOrCreateDirByPath(fileDirStr) ?: return
+        val fileName = "${table.className}$suffix"
+        val code = gen.generate(table, pkg)
+        val r = writer.writeXmlFile(dir, fileName, code, overwrite = false)
+        appendLog("${if (r.success) "✔" else if (r.error?.contains("跳过") == true) "•" else "❌"} $fileName.xml ${r.error ?: ""}")
     }
 }

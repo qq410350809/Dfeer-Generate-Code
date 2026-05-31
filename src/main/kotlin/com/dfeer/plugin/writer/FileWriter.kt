@@ -1,9 +1,8 @@
 package com.dfeer.plugin.writer
 
-import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 
-class FileWriter(private val project: Project) {
+class FileWriter {
 
     data class WriteResult(
         val filePath: String,
@@ -37,31 +36,11 @@ class FileWriter(private val project: Project) {
 
     fun findOrCreateDirByPath(absolutePath: String): VirtualFile? {
         val fs = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
-        var dir = fs.findFileByPath(absolutePath)
+        val dir = fs.findFileByPath(absolutePath)
         if (dir != null) return dir
         val parent = findOrCreateDirByPath(absolutePath.substringBeforeLast("/"))
             ?: return null
         return parent.createChildDirectory(this, absolutePath.substringAfterLast("/"))
     }
 
-    fun findOrCreatePackageDir(baseDir: VirtualFile, packageName: String, subPackage: String): VirtualFile? {
-        val fullPath = "$packageName/$subPackage".replace('.', '/')
-        var current: VirtualFile? = baseDir
-        for (segment in fullPath.split("/")) {
-            if (segment.isNotBlank()) {
-                current = current?.findChild(segment) ?: current?.createChildDirectory(this, segment)
-            }
-        }
-        return current
-    }
-
-    fun findOrCreateDir(baseDir: VirtualFile, subDir: String): VirtualFile? {
-        var current: VirtualFile = baseDir
-        for (segment in subDir.split("/")) {
-            if (segment.isNotBlank()) {
-                current = current.findChild(segment) ?: current.createChildDirectory(this, segment)
-            }
-        }
-        return current
-    }
 }
