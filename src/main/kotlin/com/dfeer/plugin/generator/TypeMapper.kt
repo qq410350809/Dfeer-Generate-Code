@@ -2,11 +2,28 @@ package com.dfeer.plugin.generator
 
 object TypeMapper {
 
-    private val knownTypePrefixes = listOf(
-        "TINYINT", "SMALLINT", "MEDIUMINT", "INTEGER", "INT", "BIGINT",
-        "VARCHAR", "CHAR", "TEXT", "LONGTEXT", "MEDIUMTEXT", "TINYTEXT",
-        "DECIMAL", "NUMERIC", "FLOAT", "DOUBLE",
-        "DATETIME", "TIMESTAMP", "DATE", "BIT"
+    private val knownTypeDefs = listOf(
+        "VARCHAR" to "String",
+        "CHAR" to "String",
+        "TEXT" to "String",
+        "LONGTEXT" to "String",
+        "MEDIUMTEXT" to "String",
+        "TINYTEXT" to "String",
+        "TINYINT(1)" to "Boolean",
+        "BIT" to "Boolean",
+        "TINYINT" to "Integer",
+        "SMALLINT" to "Integer",
+        "MEDIUMINT" to "Integer",
+        "INT" to "Integer",
+        "INTEGER" to "Integer",
+        "BIGINT" to "Long",
+        "DECIMAL" to "BigDecimal",
+        "NUMERIC" to "BigDecimal",
+        "FLOAT" to "BigDecimal",
+        "DOUBLE" to "BigDecimal",
+        "DATE" to "LocalDate",
+        "DATETIME" to "LocalDateTime",
+        "TIMESTAMP" to "LocalDateTime"
     )
 
     fun toJavaType(dbType: String, columnName: String = "", overrides: Map<String, String> = emptyMap()): String {
@@ -23,7 +40,7 @@ object TypeMapper {
         if (exactMatch != null) return exactMatch
         val sorted = overrides.keys.sortedByDescending { it.length }
         for (prefix in sorted) {
-            if (upper.startsWith(prefix) || prefix.startsWith(upper)) {
+            if (upper.startsWith(prefix) || upper.replace(" ", "") == prefix) {
                 return overrides[prefix]
             }
         }
@@ -50,11 +67,7 @@ object TypeMapper {
     }
 
     fun getDefaultMappings(): List<Pair<String, String>> {
-        val seen = mutableSetOf<String>()
-        return knownTypePrefixes.mapNotNull { prefix ->
-            val jt = defaultToJavaType(prefix)
-            if (seen.add(jt)) prefix to jt else null
-        }
+        return knownTypeDefs
     }
 
     fun toImportTypes(dbType: String, overrides: Map<String, String> = emptyMap()): String? {

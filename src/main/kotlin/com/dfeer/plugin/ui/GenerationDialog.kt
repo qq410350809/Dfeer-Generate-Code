@@ -8,6 +8,7 @@ import com.dfeer.plugin.module.ModuleScanner
 import com.dfeer.plugin.settings.GenerationSettings
 import com.dfeer.plugin.writer.FileWriter
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.fileChooser.FileChooser
 import com.intellij.openapi.fileChooser.FileChooserDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
@@ -25,6 +26,7 @@ import java.awt.event.MouseEvent
 import java.nio.file.Paths
 import javax.swing.*
 import javax.swing.table.AbstractTableModel
+import javax.swing.table.TableCellEditor
 import javax.swing.table.TableCellRenderer
 
 class GenerationDialog(
@@ -213,11 +215,11 @@ class GenerationDialog(
                 buttonPanel.add(cancelBtn)
                 buttonPanel.add(nextBtn)
             }
-            2 -> {
+            2, 3 -> {
                 buttonPanel.add(backBtn)
                 buttonPanel.add(nextBtn)
             }
-            3 -> {
+            4 -> {
                 buttonPanel.add(backBtn)
                 buttonPanel.add(generateButton)
             }
@@ -468,13 +470,25 @@ class GenerationDialog(
                 refreshTypeMappings()
                 showStep(3)
             }
+            3 -> {
+                saveTypeMappings()
+                showGenerationStep()
+            }
         }
+    }
+
+    private fun showGenerationStep() {
+        val selected = allTables.filterIndexed { i, _ -> checked[i] }
+        summaryLabel.text = "将生成 ${selected.size} 个表的代码: ${selected.joinToString(", ") { it.className }}"
+        logArea.text = ""
+        showStep(4)
     }
 
     private fun goPrevStep() {
         when (step) {
             2 -> showStep(1)
             3 -> showStep(2)
+            4 -> showStep(3)
         }
     }
 
@@ -484,6 +498,7 @@ class GenerationDialog(
         rootPanel.add(createSetupPanel(), "setup")
         rootPanel.add(createFileConfigPanel(), "fileconfig")
         rootPanel.add(createTypeMappingPanel(), "typemapping")
+        rootPanel.add(createGenerationPanel(), "generation")
         cardLayout.show(rootPanel, "setup")
         return rootPanel
     }
@@ -493,7 +508,8 @@ class GenerationDialog(
         val cardName = when (s) {
             1 -> "setup"
             2 -> "fileconfig"
-            else -> "typemapping"
+            3 -> "typemapping"
+            else -> "generation"
         }
         cardLayout.show(rootPanel, cardName)
         buildButtonsForStep()
@@ -553,6 +569,26 @@ class GenerationDialog(
         val label = JLabel("配置各文件类型的目标目录和后缀名（目录修改不保存，后缀自动保存）:")
         label.border = BorderFactory.createEmptyBorder(8, 8, 4, 8)
         panel.add(label, BorderLayout.NORTH)
+
+        val dirColumn = fileConfigTable.columnModel.getColumn(1)
+        dirColumn.cellEditor = object : AbstractCellEditor(), TableCellEditor {
+            private val field = TextFieldWithBrowseButton()
+
+            init {
+                val descriptor = FileChooserDescriptor(false, true, false, false, false, false)
+                field.addBrowseFolderListener(project, descriptor)
+            }
+
+            override fun getTableCellEditorComponent(
+                table: JTable, value: Any?, isSelected: Boolean, row: Int, col: Int
+            ): Component {
+                field.text = value as? String ?: ""
+                return field
+            }
+
+            override fun getCellEditorValue() = field.text
+        }
+
         val scrollPane = JBScrollPane(fileConfigTable)
         scrollPane.border = BorderFactory.createEmptyBorder(0, 8, 8, 8)
         panel.add(scrollPane, BorderLayout.CENTER)
@@ -560,24 +596,27 @@ class GenerationDialog(
     }
 
     private fun createTypeMappingPanel(): JComponent {
+        val panel = JPanel(BorderLayout())
+        val label = JLabel("数据库类型 → Java 类型映射（修改后自动保存）:")
+        label.border = BorderFactory.createEmptyBorder(8, 8, 4, 8)
+        panel.add(label, BorderLayout.NORTH)
+        val typeScroll = JBScrollPane(typeMappingTable)
+        typeScroll.border = BorderFactory.createEmptyBorder(0, 8, 8, 8)
+        panel.add(typeScroll, BorderLayout.CENTER)
+        return panel
+    }
+
+    private fun createGenerationPanel(): JComponent {
         val panel = JPanel(GridBagLayout())
         val c = GridBagConstraints()
         c.insets = Insets(4, 8, 4, 8)
 
         c.gridx = 0; c.gridy = 0; c.weighty = 0.0; c.fill = GridBagConstraints.HORIZONTAL
-        panel.add(JLabel("数据库类型 → Java 类型映射（修改后自动保存）:"), c)
-
-        c.gridx = 0; c.gridy = 1; c.weighty = 0.5; c.fill = GridBagConstraints.BOTH
-        val typeScroll = JBScrollPane(typeMappingTable)
-        typeScroll.preferredSize = java.awt.Dimension(400, 200)
-        panel.add(typeScroll, c)
-
-        c.gridx = 0; c.gridy = 2; c.weighty = 0.0; c.fill = GridBagConstraints.HORIZONTAL
         panel.add(summaryLabel, c)
 
-        c.gridx = 0; c.gridy = 3; c.weighty = 1.0; c.fill = GridBagConstraints.BOTH
+        c.gridx = 0; c.gridy = 1; c.weighty = 1.0; c.fill = GridBagConstraints.BOTH
         val logScroll = JBScrollPane(logArea)
-        logScroll.preferredSize = java.awt.Dimension(580, 200)
+        logScroll.preferredSize = java.awt.Dimension(580, 300)
         panel.add(logScroll, c)
 
         return panel
