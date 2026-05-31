@@ -6,6 +6,12 @@ plugins {
 }
 
 intellijPlatform {
+    pluginConfiguration {
+        ideaVersion {
+            sinceBuild = "221"
+            untilBuild = "263.*"
+        }
+    }
     publishing {
         token = project.findProperty("intellijPublishToken") as? String ?: ""
     }
